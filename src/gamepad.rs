@@ -5,7 +5,7 @@ use esp_idf_svc::hal::peripheral::Peripheral;
 use std::ops::Range;
 
 pub trait Gamepad {
-    /// Returns true if the state has changed.
+    /// Returns raw values of joystick.
     fn read_state(&mut self) -> eyre::Result<Option<State>>;
 }
 
@@ -20,10 +20,10 @@ impl<'d, ADC: Adc, P0: ADCPin, P1: ADCPin, P2: ADCPin, P3: ADCPin> Gamepad
 
 #[derive(Debug, Clone, Default)]
 pub struct State {
-    pub base_rotator_angle: usize,
-    pub elbow_angle: usize,
-    pub shoulder_angle: usize,
-    pub gripper_angle: usize,
+    pub base_rotator_angle: u32,
+    pub elbow_angle: u32,
+    pub shoulder_angle: u32,
+    pub gripper_angle: u32,
 }
 
 pub struct GamepadImpl<'d, ADC: Adc, P0: ADCPin, P1: ADCPin, P2: ADCPin, P3: ADCPin> {

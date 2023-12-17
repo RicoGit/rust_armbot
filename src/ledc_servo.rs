@@ -1,4 +1,5 @@
 //! This is a small lib for controlling servo using LEDC.
+//! Api the same as stepper motors with 2 methods: `step` and `dir`.
 
 #![allow(unused)]
 
@@ -25,17 +26,23 @@ pub struct ServoConfig {
     /// ESP32 supports High Speed Mode.
     /// ESP32S2, ESP32S3, ESP32C2 and ESP32C3 supports Low Speed Mode.
     pub speed_mode: ledc::SpeedMode,
+    /// How much add\subtract to 'duty' for making micro step
+    pub step: u32,
 }
 
 impl ServoConfig {
     /// Config for [SG90](https://components101.com/motors/servo-motor-basics-pinout-datasheet).
     pub fn sg90(speed_mode: ledc::SpeedMode) -> Self {
+        let pulse_width_ns = 500..2400;
+        let max_angle = 180.0;
+        let step = (pulse_width_ns.end - pulse_width_ns.start) / max_angle as u32;
         ServoConfig {
-            max_angle: 180.0,
+            max_angle,
             frequency: 50.Hz(),
-            pulse_width_ns: 500..2400,
+            pulse_width_ns,
             speed_mode,
             resolution: ledc::Resolution::Bits12,
+            step,
         }
     }
 
@@ -48,6 +55,8 @@ impl ServoConfig {
 pub struct Servo<'d> {
     pub ledc_driver: ledc::LedcDriver<'d>,
     config: ServoConfig,
+    /// Current direction. True - forward, false - backward.
+    direction: bool,
     _p: PhantomData<&'d mut ()>,
 }
 
@@ -70,40 +79,54 @@ impl<'d> Servo<'d> {
         Ok(Servo {
             ledc_driver,
             config,
+            direction: true,
             _p: PhantomData,
         })
     }
 
+    /// Make micro step, return false if servo reaches min or max position.
+    pub fn step(&mut self) -> Result<bool, EspError> {
+        let max_duty = self.ledc_driver.get_max_duty();
+        let current_duty = self.ledc_driver.get_duty();
+
+        let new_duty = if self.direction {
+            current_duty + self.config.step
+        } else {
+            current_duty - self.config.step
+        };
+
+        if new_duty > self.config.pulse_width_ns.end || new_duty < self.config.pulse_width_ns.start
+        {
+            // servo reaches bounds
+            return Ok(false);
+        }
+
+        self.ledc_driver.set_duty(new_duty);
+        self.ledc_driver.enable();
+        Ok(true)
+    }
+
+    /// Sets new direction value, returns old direction value.
+    pub fn dir(&mut self, direction: bool) -> bool {
+        let old = self.direction;
+        self.direction = direction;
+        old
+    }
+
+    // Returns current direction value.
+    pub fn get_dir(&self) -> bool {
+        self.direction
+    }
+
+    /// Returns current angle value.
     pub fn get_angle(&self) -> f64 {
         let max_duty = self.ledc_driver.get_max_duty();
         let current_duty = self.ledc_driver.get_duty();
         calculate_angle(&self.config, current_duty, max_duty)
     }
-
-    pub fn set_angle(&mut self, angle: f64) -> Result<(), EspError> {
-        let max_duty = self.ledc_driver.get_max_duty();
-        let angle = angle.min(self.config.max_angle).max(0.0);
-        let duty = calculate_duty(
-            &self.config,
-            f64::min(angle, self.config.max_angle),
-            max_duty,
-        );
-        self.ledc_driver.set_duty(duty);
-        self.ledc_driver.enable()
-    }
 }
 
 const NANOS_IS_SEC: f64 = 1_000_000.0;
-
-/// Transforms 'angle' to 'duty' in respect that given servo pulse range.
-fn calculate_duty(config: &ServoConfig, angle: f64, max_duty: u32) -> u32 {
-    let pulse_ns = angle / config.max_angle
-        * (config.pulse_width_ns.end - config.pulse_width_ns.start) as f64
-        + (config.pulse_width_ns.start as f64);
-
-    let duty = pulse_ns * max_duty as f64 * config.frequency.0 as f64 / NANOS_IS_SEC;
-    duty as u32
-}
 
 /// Transforms 'duty' to 'angle' in respect that given servo pulse range.
 fn calculate_angle(config: &ServoConfig, duty: u32, max_duty: u32) -> f64 {
@@ -112,17 +135,4 @@ fn calculate_angle(config: &ServoConfig, duty: u32, max_duty: u32) -> f64 {
     (pulse_ns - config.pulse_width_ns.start as f64)
         / (config.pulse_width_ns.end - config.pulse_width_ns.start) as f64
         * config.max_angle
-}
-
-#[cfg(test)]
-pub mod tests {
-    use crate::ledc_servo_lib::{calculate_duty, Servo, ServoConfig};
-    use esp_idf_svc::hal::ledc::SpeedMode;
-
-    #[test]
-    fn calculate_duty_test() {
-        let config = ServoConfig::sg90(SpeedMode::LowSpeed);
-        assert_eq!(calculate_duty(&config, 0.0, 1023), 25);
-        // todo tests
-    }
 }
