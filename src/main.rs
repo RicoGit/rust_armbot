@@ -2,13 +2,13 @@ use esp_idf_svc::hal::ledc;
 use esp_idf_svc::hal::peripherals::Peripherals;
 
 use crate::armbot::{ArmBot, ArmBotConfig};
-use crate::gamepad::GamepadImpl;
+use crate::gamepad::{GamepadConfig, GamepadImpl};
 use crate::ledc_servo::{Servo, ServoConfig};
 
 mod armbot;
-mod command;
 mod gamepad;
 mod ledc_servo;
+mod util;
 
 fn main() -> eyre::Result<()> {
     // It is necessary to call this function once. Otherwise some patches to the runtime
@@ -21,6 +21,7 @@ fn main() -> eyre::Result<()> {
     let peripherals = Peripherals::take().unwrap();
 
     let gamepad = GamepadImpl::new(
+        GamepadConfig::default(),
         peripherals.adc1,
         peripherals.pins.gpio0,
         peripherals.pins.gpio1,

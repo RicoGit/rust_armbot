@@ -1,8 +1,7 @@
-use crate::command::{Cmd, CmdMappingConfig};
-use crate::gamepad::{Gamepad, State};
 use esp_idf_svc::hal::delay::Delay;
 use std::ops::Range;
 
+use crate::gamepad::{Gamepad, Position};
 use crate::ledc_servo::Servo;
 
 pub struct ArmBot<'d, G> {
@@ -49,46 +48,39 @@ impl<'d, G: Gamepad> ArmBot<'d, G> {
 
     /// Makes the arm bot do a cycle of its movement.
     pub fn do_step(&mut self) -> eyre::Result<()> {
-        let state = self.gamepad.read_state()?;
-        if state.is_none() {
-            return Ok(());
-        }
+        // add min delay and max delay
+        let _state = self.gamepad.read_state(&self.config.delay_range_ms)?;
 
-        let new_state = state.unwrap();
+        // todo finish
+        self.delay.delay_ms(2000);
 
-        let now = self.get_now_ms();
-        let shoulder_cmd =
-            Cmd::from_joystick_value(new_state.shoulder_angle, &self.config.cmd_mapping_config);
-        Self::make_step(shoulder_cmd, &mut self.shoulder_servo, |delay_ms| {
-            self.last_ts + delay_ms > now
-        });
-
-        self.delay.delay_us(1);
         Ok(())
     }
 
-    pub fn make_step(cmd: Cmd, servo: &mut Servo<'d>, its_time: impl Fn(u32) -> bool) {
+    pub fn make_step(
+        cmd: Position,
+        servo: &mut Servo<'d>,
+        its_time: impl Fn(u32) -> bool,
+    ) -> eyre::Result<()> {
         match cmd {
-            Cmd::Stop => {
+            Position::Center => {
                 // do noting
             }
-            Cmd::Forward { delay_ms } => {
+            Position::Low(delay_ms) => {
                 if its_time(delay_ms) {
-                    servo.dir(true);
-                    servo.step();
+                    let _ = servo.dir(true);
+                    servo.step()?;
                 }
             }
-            Cmd::Backward { delay_ms } => {
+            Position::High(delay_ms) => {
                 if its_time(delay_ms) {
-                    servo.dir(false);
-                    servo.step();
+                    let _ = servo.dir(false);
+                    servo.step()?;
                 }
             }
         }
-    }
 
-    fn get_now_ms(&self) -> u32 {
-        self.last_ts + self.config.cmd_mapping_config.min_delay_ms
+        Ok(())
     }
 }
 
@@ -99,8 +91,10 @@ pub struct ArmBotConfig {
     pub elbow_angle_range: Range<usize>,
     /// Desirable range of the gripper angle.
     pub gripper_angle_range: Range<usize>,
-    /// Mapping describes joystick and.
-    pub cmd_mapping_config: CmdMappingConfig,
+
+    /// Min possible delay, for fastest motion.
+    /// Max possible delay, for slowest motion.
+    pub delay_range_ms: Range<u32>,
 }
 
 impl Default for ArmBotConfig {
@@ -109,7 +103,7 @@ impl Default for ArmBotConfig {
             shoulder_angle_range: 30..150,
             elbow_angle_range: 30..150,
             gripper_angle_range: 20..70,
-            cmd_mapping_config: Default::default(),
+            delay_range_ms: 1..20,
         }
     }
 }
