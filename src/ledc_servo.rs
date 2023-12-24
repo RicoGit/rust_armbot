@@ -9,6 +9,7 @@ use esp_idf_svc::hal::ledc::{LedcChannel, LedcTimer};
 use esp_idf_svc::hal::peripheral::Peripheral;
 use esp_idf_svc::hal::prelude::{FromValueType, Hertz};
 use esp_idf_svc::sys::EspError;
+use log::{info, trace};
 use std::marker::PhantomData;
 use std::ops::Range;
 use std::time::Duration;
@@ -33,9 +34,9 @@ pub struct ServoConfig {
 impl ServoConfig {
     /// Config for [SG90](https://components101.com/motors/servo-motor-basics-pinout-datasheet).
     pub fn sg90(speed_mode: ledc::SpeedMode) -> Self {
-        let pulse_width_ns = 500..2400;
+        let pulse_width_ns = 500..2600;
         let max_angle = 180.0;
-        let step = (pulse_width_ns.end - pulse_width_ns.start) / max_angle as u32;
+        let step = 10;
         ServoConfig {
             max_angle,
             frequency: 50.Hz(),
@@ -53,7 +54,9 @@ impl ServoConfig {
 }
 
 pub struct Servo<'d> {
+    name: String,
     pub ledc_driver: ledc::LedcDriver<'d>,
+    pub duty: Range<u32>,
     config: ServoConfig,
     /// Current direction. True - forward, false - backward.
     direction: bool,
@@ -62,6 +65,7 @@ pub struct Servo<'d> {
 
 impl<'d> Servo<'d> {
     pub fn new<T: LedcTimer, C: LedcChannel, P: OutputPin>(
+        name: &str,
         config: ServoConfig,
         timer: impl Peripheral<P = T> + 'd,
         channel: impl Peripheral<P = C> + 'd,
@@ -74,10 +78,25 @@ impl<'d> Servo<'d> {
 
         let timer_driver = ledc::LedcTimerDriver::new(timer, &timer_config)?;
 
-        let ledc_driver = ledc::LedcDriver::new(channel, timer_driver, pin)?;
+        let mut ledc_driver = ledc::LedcDriver::new(channel, timer_driver, pin)?;
+
+        let duty_range = calc_duty_range(&config, ledc_driver.get_max_duty());
+
+        // set to center position
+        let center = duty_range.start + (duty_range.end - duty_range.start) / 2;
+        ledc_driver.set_duty(center);
+
+        info!(
+            "{name} servo: center={center}, duty_range={duty_range:?}",
+            name = name,
+            center = center,
+            duty_range = duty_range
+        );
 
         Ok(Servo {
+            name: name.to_string(),
             ledc_driver,
+            duty: duty_range,
             config,
             direction: true,
             _p: PhantomData,
@@ -85,24 +104,18 @@ impl<'d> Servo<'d> {
     }
 
     /// Make micro step, return false if servo reaches min or max position.
-    pub fn step(&mut self) -> Result<bool, EspError> {
+    pub fn step(&mut self, step: u32) -> Result<bool, EspError> {
         let max_duty = self.ledc_driver.get_max_duty();
-        let current_duty = self.ledc_driver.get_duty();
+        let new_duty = self.calc_duty(step);
 
-        let new_duty = if self.direction {
-            current_duty + self.config.step
-        } else {
-            current_duty - self.config.step
-        };
-
-        if new_duty > self.config.pulse_width_ns.end || new_duty < self.config.pulse_width_ns.start
-        {
-            // servo reaches bounds
+        if new_duty > self.duty.end || new_duty < self.duty.start {
+            // servo reaches bounds, skip step
             return Ok(false);
         }
 
         self.ledc_driver.set_duty(new_duty);
         self.ledc_driver.enable();
+        trace!("{} servo step({}) to {}", &self.name, step, new_duty);
         Ok(true)
     }
 
@@ -124,9 +137,26 @@ impl<'d> Servo<'d> {
         let current_duty = self.ledc_driver.get_duty();
         calculate_angle(&self.config, current_duty, max_duty)
     }
+
+    fn calc_duty(&self, mut step: u32) -> u32 {
+        let current_duty = self.ledc_driver.get_duty();
+        if self.direction {
+            current_duty + step
+        } else {
+            current_duty.max(step) - step
+        }
+    }
 }
 
 const NANOS_IS_SEC: f64 = 1_000_000.0;
+
+fn calc_duty_range(config: &ServoConfig, max_duty: u32) -> Range<u32> {
+    let min_pulse = config.pulse_width_ns.start;
+    let max_pulse = config.pulse_width_ns.end;
+    let min_duty = pulse_to_duty(config, min_pulse, max_duty);
+    let max_duty = pulse_to_duty(config, max_pulse, max_duty);
+    min_duty..max_duty
+}
 
 /// Transforms 'duty' to 'angle' in respect that given servo pulse range.
 fn calculate_angle(config: &ServoConfig, duty: u32, max_duty: u32) -> f64 {
@@ -135,4 +165,9 @@ fn calculate_angle(config: &ServoConfig, duty: u32, max_duty: u32) -> f64 {
     (pulse_ns - config.pulse_width_ns.start as f64)
         / (config.pulse_width_ns.end - config.pulse_width_ns.start) as f64
         * config.max_angle
+}
+
+fn pulse_to_duty(config: &ServoConfig, pulse: u32, max_duty: u32) -> u32 {
+    let duty = pulse as f64 * config.frequency.0 as f64 * max_duty as f64 / NANOS_IS_SEC;
+    duty as u32
 }

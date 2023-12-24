@@ -1,5 +1,7 @@
 use esp_idf_svc::hal::ledc;
 use esp_idf_svc::hal::peripherals::Peripherals;
+use std::thread;
+use std::time::Duration;
 
 use crate::armbot::{ArmBot, ArmBotConfig};
 use crate::gamepad::{GamepadConfig, GamepadImpl};
@@ -33,6 +35,7 @@ fn main() -> eyre::Result<()> {
     let servo_cfg = ServoConfig::sg90(ledc::SpeedMode::LowSpeed);
 
     let shoulder_servo = Servo::new(
+        "shoulder",
         servo_cfg.clone(),
         peripherals.ledc.timer0,
         peripherals.ledc.channel0,
@@ -41,6 +44,7 @@ fn main() -> eyre::Result<()> {
     .expect("shoulder init failed");
 
     let elbow_servo = Servo::new(
+        "elbow",
         servo_cfg.clone(),
         peripherals.ledc.timer1,
         peripherals.ledc.channel1,
@@ -49,6 +53,7 @@ fn main() -> eyre::Result<()> {
     .expect("elbow init failed");
 
     let gripper_servo = Servo::new(
+        "gripper",
         servo_cfg,
         peripherals.ledc.timer2,
         peripherals.ledc.channel2,
@@ -70,6 +75,6 @@ fn main() -> eyre::Result<()> {
     loop {
         // do step blocks until the step is done
         bot.do_step().unwrap();
-        print!(".")
+        thread::sleep(Duration::from_millis(10)); // todo remove
     }
 }

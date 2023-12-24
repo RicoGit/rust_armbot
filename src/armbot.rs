@@ -17,9 +17,6 @@ pub struct ArmBot<'d, G> {
     elbow_angle: f64,
     shoulder_angle: f64,
     gripper_angle: f64,
-
-    /// Last step time.
-    last_ts: u32,
 }
 
 impl<'d, G: Gamepad> ArmBot<'d, G> {
@@ -42,44 +39,39 @@ impl<'d, G: Gamepad> ArmBot<'d, G> {
             elbow_angle: 0.0,
             shoulder_angle: 0.0,
             gripper_angle: 0.0,
-            last_ts: 0,
         })
     }
 
     /// Makes the arm bot do a cycle of its movement.
     pub fn do_step(&mut self) -> eyre::Result<()> {
-        // add min delay and max delay
-        let _state = self.gamepad.read_state(&self.config.delay_range_ms)?;
+        let state = self.gamepad.read_state(&self.config.step_size)?;
+        if state.is_center() {
+            // noting to do
+            return Ok(());
+        }
 
-        // todo finish
-        self.delay.delay_ms(2000);
+        // todo make step of base_rotator
+        Self::make_step(&state.shoulder, &mut self.shoulder_servo)?;
+        Self::make_step(&state.elbow, &mut self.elbow_servo)?;
+        Self::make_step(&state.gripper, &mut self.gripper_servo)?;
 
         Ok(())
     }
 
-    pub fn make_step(
-        cmd: Position,
-        servo: &mut Servo<'d>,
-        its_time: impl Fn(u32) -> bool,
-    ) -> eyre::Result<()> {
+    pub fn make_step(cmd: &Position, servo: &mut Servo<'d>) -> eyre::Result<()> {
         match cmd {
             Position::Center => {
                 // do noting
             }
-            Position::Low(delay_ms) => {
-                if its_time(delay_ms) {
-                    let _ = servo.dir(true);
-                    servo.step()?;
-                }
+            Position::Low(step) => {
+                let _ = servo.dir(true);
+                servo.step(*step)?;
             }
-            Position::High(delay_ms) => {
-                if its_time(delay_ms) {
-                    let _ = servo.dir(false);
-                    servo.step()?;
-                }
+            Position::High(step) => {
+                let _ = servo.dir(false);
+                servo.step(*step)?;
             }
         }
-
         Ok(())
     }
 }
@@ -92,9 +84,9 @@ pub struct ArmBotConfig {
     /// Desirable range of the gripper angle.
     pub gripper_angle_range: Range<usize>,
 
-    /// Min possible delay, for fastest motion.
-    /// Max possible delay, for slowest motion.
-    pub delay_range_ms: Range<u32>,
+    /// Min possible step, for slowest motion.
+    /// Max possible step, for fastest motion.
+    pub step_size: Range<u32>,
 }
 
 impl Default for ArmBotConfig {
@@ -103,7 +95,7 @@ impl Default for ArmBotConfig {
             shoulder_angle_range: 30..150,
             elbow_angle_range: 30..150,
             gripper_angle_range: 20..70,
-            delay_range_ms: 1..20,
+            step_size: 1..10,
         }
     }
 }

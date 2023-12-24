@@ -38,7 +38,7 @@ impl GamepadConfig {
 
 impl Default for GamepadConfig {
     fn default() -> Self {
-        Self::new(25, 2757)
+        Self::new(50, 2757)
     }
 }
 
@@ -58,7 +58,7 @@ pub struct RawState {
     pub gripper: u32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct State {
     pub base_rotator: Position,
     pub shoulder: Position,
@@ -66,9 +66,19 @@ pub struct State {
     pub gripper: Position,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+impl State {
+    pub fn is_center(&self) -> bool {
+        self.base_rotator == Position::Center
+            && self.shoulder == Position::Center
+            && self.elbow == Position::Center
+            && self.gripper == Position::Center
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum Position {
     Low(u32),
+    #[default]
     Center,
     High(u32),
 }
@@ -89,7 +99,7 @@ impl Position {
                 center_range.start,
                 output.start,
                 output.end,
-                false,
+                true,
             );
             Position::Low(val)
         } else {
@@ -99,7 +109,7 @@ impl Position {
                 config.joystick_max_value,
                 output.start,
                 output.end,
-                true,
+                false,
             );
             Position::High(val)
         }
@@ -138,7 +148,7 @@ where
         elbow_pin: P2,
         gripper_pin: P3,
     ) -> eyre::Result<Self> {
-        let adc = AdcDriver::new(adc, &Config::new().calibration(true))?;
+        let adc = AdcDriver::new(adc, &Config::new())?;
 
         let base_rotator: AdcChannelDriver<{ attenuation::DB_11 }, _> =
             AdcChannelDriver::new(base_rotator_pin)?;
