@@ -1,3 +1,4 @@
 [toolchain]
-channel = "nightly"
+#channel = "nightly"
+channel = "nightly-2023-12-12" # last version 2024-07-01 not working
 components = ["rust-src"]
