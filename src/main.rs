@@ -23,7 +23,10 @@ fn main() -> eyre::Result<()> {
     let peripherals = Peripherals::take().unwrap();
 
     let gamepad = GamepadImpl::new(
-        GamepadConfig::default(),
+        GamepadConfig {
+            center_offset: 100,
+            .. GamepadConfig::default()
+        },
         peripherals.adc1,
         peripherals.pins.gpio0,
         peripherals.pins.gpio1,

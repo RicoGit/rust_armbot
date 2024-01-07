@@ -36,7 +36,7 @@ impl ServoConfig {
     pub fn sg90(speed_mode: ledc::SpeedMode) -> Self {
         let pulse_width_ns = 500..2600;
         let max_angle = 180.0;
-        let step = 10;
+        let step = 5;
         ServoConfig {
             max_angle,
             frequency: 50.Hz(),

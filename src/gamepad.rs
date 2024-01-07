@@ -10,26 +10,20 @@ use crate::util;
 
 pub struct GamepadConfig {
     // Min value of joystick.
-    joystick_min_value: u32,
+    pub joystick_min_value: u32,
     /// Max value of joystick.
-    joystick_max_value: u32,
+    pub joystick_max_value: u32,
 
-    /// Offset from center position.
-    center_offset: u32,
+    /// Defines center of joystick as offsets from middle point.
+    /// `min value = center - center_offset`
+    /// `max value = center + center_offset`
+    pub center_offset: u32,
 
     /// If set to true, then real center position will be read from the joystick at the start.
-    use_real_center: bool,
+    pub use_real_center: bool,
 }
 
 impl GamepadConfig {
-    pub fn new(center_offset: u32, joystick_max_value: u32) -> Self {
-        Self {
-            joystick_min_value: 10,
-            center_offset,
-            joystick_max_value,
-            use_real_center: true,
-        }
-    }
 
     fn center_range(&self, val: u32) -> Range<u32> {
         val - self.center_offset..val + self.center_offset
@@ -38,7 +32,12 @@ impl GamepadConfig {
 
 impl Default for GamepadConfig {
     fn default() -> Self {
-        Self::new(50, 2757)
+        Self {
+            joystick_min_value: 10,
+            joystick_max_value: 2757,
+            center_offset: 50,
+            use_real_center: true,
+        }
     }
 }
 
